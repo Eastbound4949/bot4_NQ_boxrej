@@ -29,7 +29,7 @@ TIMEZONE      = os.environ.get("TIMEZONE",      "America/New_York")
 # ── Risk management ───────────────────────────────────────────────────────────
 PAPER_TRADING       = os.environ.get("PAPER_TRADING", "true").lower() == "true"
 ACCOUNT_SIZE        = float(os.environ.get("ACCOUNT_SIZE",    "1000.0"))
-RISK_PER_TRADE_PCT  = float(os.environ.get("RISK_PER_TRADE_PCT", "1.0"))     # % of account
+RISK_PER_TRADE_PCT  = float(os.environ.get("RISK_PER_TRADE_PCT", "5.0"))     # % of account
 MAX_DAILY_LOSS_PCT  = float(os.environ.get("MAX_DAILY_LOSS_PCT",  "5.0"))     # % of account
 MAX_TRADES_PER_DAY  = int(os.environ.get("MAX_TRADES_PER_DAY",   "1"))
 
