@@ -1,0 +1,6 @@
+config.py
+bot_state.json
+trades_log.csv
+__pycache__/
+*.pyc
+*.tmp.*
