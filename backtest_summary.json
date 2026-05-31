@@ -1,0 +1,73 @@
+{
+  "bot_name": "Bot 4 NQ Box Rejection",
+  "strategy": "Previous day high bounce on NQ=F daily bars. Price touches prev high -> rejection candle -> enter next green day",
+  "backtest_date": "2026-05-31",
+  "data_source": "Yahoo Finance Daily (NQ=F)",
+  "data_file": null,
+
+  "optimisation": {
+    "method": "Timeframe x RRR 2yr sweep (bt_tf_rrr_sweep.py)",
+    "sweep_date": "2026-05-31",
+    "timeframes_tested": ["Daily (2yr)", "1h (2yr)", "30m (~60d)", "15m (~60d)"],
+    "rr_values": [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0],
+    "touch_values_pct": [0.1, 0.2, 0.3, 0.5],
+    "combos_tested": 336,
+    "winner": "Daily bars dominate — Calmar 21.01 vs 3.46 for 1h",
+    "previous_config": {"rr": 2.5, "touch_pct": 0.2, "max_bars": 3, "calmar_2yr": 5.28, "ret_2yr_pct": 29.5},
+    "optimal_config": {"rr": 3.5, "touch_pct": 0.5, "max_bars": 2, "calmar_2yr": 21.01, "ret_2yr_pct": 95.1}
+  },
+
+  "period": "2016-05-31 to 2026-05-29",
+  "period_years": 10.0,
+  "deployed_config": {
+    "ticker": "NQ=F",
+    "touch_threshold_pct": 0.5,
+    "rr": 3.5,
+    "max_hold_days": 2,
+    "risk_pct": 1.0,
+    "timeframe": "Daily"
+  },
+
+  "results_optimised_10yr": {
+    "cagr_pct": 27.5,
+    "total_trades": 389,
+    "trades_per_year": 38.9,
+    "win_rate_pct": 48.6,
+    "profit_factor": 2.25,
+    "max_drawdown_pct": 7.7,
+    "sharpe": 1.54,
+    "total_return_pct": 1033.6,
+    "max_consec_losses": 8,
+    "losing_years": ["2023"]
+  },
+
+  "results_original_10yr": {
+    "note": "OLD params: RR=2.5, Touch=0.2%, MaxBars=3",
+    "cagr_pct": 11.5,
+    "total_return_pct": 197.7,
+    "win_rate_pct": 45.6,
+    "profit_factor": 1.72,
+    "max_drawdown_pct": 8.1,
+    "sharpe": 1.13
+  },
+
+  "yearly_pnl_gbp_optimised": {
+    "2016": 100.33, "2017": 427.27, "2018": 281.53, "2019": 743.39,
+    "2020": 1167.67, "2021": 1578.61, "2022": 309.69, "2023": -298.78,
+    "2024": 2446.18, "2025": 2735.55, "2026": 844.14
+  },
+
+  "key_findings": [
+    "Daily bars beat 1h/30m/15m across all metrics (Calmar 21 vs 3.5)",
+    "RR=3.5 optimal: more R per win, WR stays above 50%",
+    "Touch=0.5% adds 44% more trades (59→85) with higher WR (49%→54%)",
+    "MaxBars=2 reduces exposure and DD vs 3-day hold",
+    "Dukascopy has no NQ data — 30m/15m limited to 60 days via yfinance",
+    "2023 only losing year in 10yr history"
+  ],
+
+  "deployment": "Not deployed — awaiting live testing",
+  "run_sweep": "python bt_tf_rrr_sweep.py",
+  "run_backtest": "python backtest_10yr.py",
+  "report_files": ["backtest_10yr_report.txt", "backtest_10yr_trades.csv", "bt_tf_rrr_results.csv"]
+}

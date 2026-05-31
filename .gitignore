@@ -4,3 +4,12 @@ trades_log.csv
 __pycache__/
 *.pyc
 *.tmp.*
+*.mp4
+vid_frames/
+_duka_cache/
+OPTIMISED.txt
+enter
+backtest_10yr_report.txt
+backtest_10yr_trades.csv
+backtest_10yr_sentiment_report.txt
+backtest_10yr_sentiment_trades.csv

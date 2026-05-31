@@ -15,10 +15,12 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "YOUR_TELEGRAM_CHAT_ID")
 TICKER = os.environ.get("TICKER", "NQ=F")          # NQ futures (Yahoo Finance)
 NAME   = os.environ.get("NAME",   "NQ Prev-Day-High Bounce")
 
-# ── Strategy parameters (optimised: 10yr backtest, +187% return, 8.1% MaxDD) ─
-TOUCH_THRESHOLD     = float(os.environ.get("TOUCH_THRESHOLD",     "0.002"))   # 0.20%
-RR_TARGET           = float(os.environ.get("RR_TARGET",           "2.5"))
-MAX_BARS_IN_TRADE   = int(os.environ.get("MAX_BARS_IN_TRADE",     "3"))       # days
+# ── Strategy parameters (optimised: 2yr TF×RRR sweep, daily bars win Calmar=21) ─
+# Previous: RR=2.5, Touch=0.2%, MaxBars=3 → +29.5% / 2yr, Calmar=5.28
+# Optimal : RR=3.5, Touch=0.5%, MaxBars=2 → +95.1% / 2yr, Calmar=21.01
+TOUCH_THRESHOLD     = float(os.environ.get("TOUCH_THRESHOLD",     "0.005"))   # 0.50%
+RR_TARGET           = float(os.environ.get("RR_TARGET",           "3.5"))
+MAX_BARS_IN_TRADE   = int(os.environ.get("MAX_BARS_IN_TRADE",     "2"))       # days
 MIN_MOVE_ABOVE_OPEN = float(os.environ.get("MIN_MOVE_ABOVE_OPEN", "0.002"))   # 0.20%
 
 # ── Session (Eastern Time — NQ regular hours) ─────────────────────────────────

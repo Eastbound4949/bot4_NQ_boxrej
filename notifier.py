@@ -60,13 +60,14 @@ def fmt_daily_summary(ticker, date, trades_today, daily_pnl, balance):
     )
 
 
-def fmt_startup(ticker, account, paper):
+def fmt_startup(ticker, account, paper, rr=3.5, risk_pct=1.0):
     mode = "PAPER TRADING" if paper else "LIVE TRADING"
     return (
         f"🤖 *NQ BOT STARTED*\n"
-        f"Ticker:  `{ticker}`\n"
-        f"Mode:    `{mode}`\n"
-        f"Account: `${account:,.2f}`\n"
-        f"Strategy: Prev Day High Bounce\n"
-        f"RR: 2.5:1 | Risk: 1%/trade"
+        f"Ticker:   `{ticker}`\n"
+        f"Mode:     `{mode}`\n"
+        f"Account:  `${account:,.2f}`\n"
+        f"Strategy: Prev Day High Bounce (Daily Bars)\n"
+        f"RR: `{rr}:1` | Risk: `{risk_pct}%/trade`\n"
+        f"Optimised: Touch=0.5% RR=3.5 MaxDays=2"
     )

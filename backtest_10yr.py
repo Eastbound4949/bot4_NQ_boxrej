@@ -28,9 +28,9 @@ import os
 TICKER          = "NQ=F"
 PERIOD          = "max"       # full available history (~23 years for NQ futures)
 TARGET_YEARS    = 10          # trim to last 10 years
-TOUCH_THRESHOLD = 0.002       # 0.20% — price within this % of prev_high = touching
-RR_TARGET       = 2.5
-MAX_DAYS        = 3           # max holding days before force-exit
+TOUCH_THRESHOLD = 0.005       # 0.50% — optimised from 2yr sweep (was 0.002)
+RR_TARGET       = 3.5         # optimised from 2yr sweep (was 2.5)
+MAX_DAYS        = 2           # optimised from 2yr sweep (was 3)
 MIN_MOVE        = 0.002       # prev_high must be >= 0.2% above today's open
 RISK_PCT        = 1.0         # % of account risked per trade
 START_CAPITAL   = 1000.0      # GBP (treated as USD-equivalent for % maths)

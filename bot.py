@@ -1,10 +1,20 @@
 """
-bot.py — NQ Prev-Day-High Bounce Bot
-Railway worker: runs continuously, checks for signals every hour during session.
+bot.py — NQ Prev-Day-High Bounce Bot (DAILY BAR STRATEGY)
+Railway worker: runs hourly scheduler during NYSE session.
 
-Strategy: 10yr backtest (2016-2026) +187% return, 8.1% MaxDD, 45% WR, Sharpe 1.11
-Instrument: NQ=F (Nasdaq 100 futures / US100 CFD)
-Timeframe: Daily ref + 1h execution
+Strategy (optimised 2yr sweep, 2024-2026):
+  RR=3.5  Touch=0.5%  MaxDays=2
+  2yr: +95.1% return, 4.5% MaxDD, Calmar=21.01, WR=54.1%
+  10yr CAGR: 27.5%/yr | Sharpe: 1.54 | PF: 2.25
+
+Signal logic:
+  Yesterday: HIGH >= prev_day_high*(1-0.5%), close < prev_day_high  (rejection)
+  Today at open: enter LONG at current market price
+  Stop: yesterday's LOW
+  Target: entry + risk * 3.5
+  Timeout: 2 trading days
+
+Instrument: NQ=F (Nasdaq-100 Futures via Yahoo Finance)
 """
 
 import csv
@@ -14,6 +24,7 @@ import sys
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 
+import numpy as np
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -24,7 +35,7 @@ if not os.path.exists("config.py"):
 import config
 import notifier
 import state
-from data_feed import fetch_daily, fetch_hourly, get_prev_day_high, get_session_bars
+from data_feed import fetch_daily, fetch_hourly, get_latest_price
 from strategy import PrevDayHighStrategy, TradeSignal
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -37,8 +48,25 @@ log = logging.getLogger(__name__)
 
 # ── Globals ───────────────────────────────────────────────────────────────────
 TZ       = ZoneInfo(config.TIMEZONE)
-strategy = PrevDayHighStrategy()
+strategy = PrevDayHighStrategy(
+    touch_threshold=config.TOUCH_THRESHOLD,
+    rr_target=config.RR_TARGET,
+    min_move_above_open=config.MIN_MOVE_ABOVE_OPEN,
+    max_bars=config.MAX_BARS_IN_TRADE,
+)
 bot_state: state.BotState = None
+
+
+def _trading_days_since(entry_date_str: str) -> int:
+    """Number of trading (business) days from entry_date to today."""
+    if not entry_date_str:
+        return 0
+    try:
+        entry = date.fromisoformat(entry_date_str)
+        today = date.today()
+        return max(0, int(np.busday_count(entry, today)))
+    except Exception:
+        return 0
 
 
 def _notify(text: str):
@@ -83,9 +111,11 @@ def _close_trade(outcome: str, exit_price: float):
     if pnl_r > 0:
         bot_state.total_wins += 1
 
+    days_held = _trading_days_since(bot_state.entry_date)
     log.info(
         f"TRADE CLOSED | {outcome.upper()} | "
         f"entry={bot_state.entry_price:.1f} exit={exit_price:.1f} | "
+        f"held {days_held}d | "
         f"P/L={pnl_r:+.2f}R = ${dollar_pnl:+.2f} | balance=${bot_state.balance:,.2f}"
     )
     _notify(notifier.fmt_exit(
@@ -100,7 +130,6 @@ def _close_trade(outcome: str, exit_price: float):
     bot_state.target_price = 0.0
     bot_state.risk_pts = 0.0
     bot_state.dollar_risk = 0.0
-    bot_state.days_in_trade = 0
     bot_state.entry_date = ""
     state.save(bot_state)
 
@@ -116,14 +145,13 @@ def _open_trade(signal: TradeSignal):
     bot_state.dollar_risk = dollar_risk
     bot_state.prev_high = signal.prev_high
     bot_state.entry_date = str(date.today())
-    bot_state.days_in_trade = 0
     bot_state.trades_today += 1
     state.save(bot_state)
 
     log.info(
         f"TRADE OPEN | entry={signal.entry_price:.1f} "
         f"stop={signal.stop_price:.1f} target={signal.target_price:.1f} "
-        f"risk=${dollar_risk:.2f}"
+        f"risk_pts={signal.risk_pts:.1f} dollar_risk=${dollar_risk:.2f}"
     )
     _notify(notifier.fmt_entry(
         config.TICKER, signal.entry_price, signal.stop_price,
@@ -133,6 +161,7 @@ def _open_trade(signal: TradeSignal):
 
 
 def _session_reset():
+    """Reset daily counters when a new trading day begins."""
     global bot_state
     today_str = str(date.today())
     if bot_state.last_session_date == today_str:
@@ -144,13 +173,14 @@ def _session_reset():
         ))
     bot_state.trades_today = 0
     bot_state.daily_pnl = 0.0
+    bot_state.signal_checked_today = False   # allow fresh daily signal check
     bot_state.last_session_date = today_str
     state.save(bot_state)
     log.info(f"New session: {today_str} | balance=${bot_state.balance:,.2f}")
 
 
 def check_signal():
-    """Main logic — called by scheduler every hour."""
+    """Main logic — called by scheduler every hour during session."""
     global bot_state
 
     now = datetime.now(TZ)
@@ -168,20 +198,14 @@ def check_signal():
         log.debug(f"Outside session ({now.strftime('%H:%M %Z')}) — skipping")
         return
 
-    # Fetch data
+    # Fetch hourly data for trade management
     try:
-        daily = fetch_daily(days=7)
         hourly = fetch_hourly(days=4)
     except Exception as e:
-        log.error(f"Data fetch failed: {e}")
+        log.error(f"Hourly data fetch failed: {e}")
         return
 
-    prev_high = get_prev_day_high(daily)
-    if prev_high is None:
-        log.warning("Could not determine prev_day_high")
-        return
-
-    # ── Check open trade ─────────────────────────────────────────────────────
+    # ── Manage open trade (stop/target/timeout) ──────────────────────────────
     if bot_state.in_trade:
         latest = hourly.iloc[-1]
         lo = float(latest["Low"])
@@ -196,37 +220,59 @@ def check_signal():
             _close_trade("win", bot_state.target_price)
             return
 
-        bot_state.days_in_trade += 1
-        if bot_state.days_in_trade >= config.MAX_BARS_IN_TRADE:
+        days_held = _trading_days_since(bot_state.entry_date)
+        if days_held >= config.MAX_BARS_IN_TRADE:
             _close_trade("timeout", cl)
             return
 
         log.info(
-            f"IN TRADE | day {bot_state.days_in_trade}/{config.MAX_BARS_IN_TRADE} | "
-            f"current={cl:.1f} stop={bot_state.stop_price:.1f} target={bot_state.target_price:.1f}"
+            f"IN TRADE | day {days_held}/{config.MAX_BARS_IN_TRADE} | "
+            f"price={cl:.1f} stop={bot_state.stop_price:.1f} "
+            f"target={bot_state.target_price:.1f}"
         )
         state.save(bot_state)
         return
 
-    # ── Look for new signal ──────────────────────────────────────────────────
-    daily_loss_pct = abs(bot_state.daily_pnl / bot_state.balance * 100) if bot_state.daily_pnl < 0 else 0
+    # ── Look for daily rejection signal (once per session) ───────────────────
+    if bot_state.signal_checked_today:
+        log.debug("Daily signal already checked today")
+        return
+
     if bot_state.trades_today >= config.MAX_TRADES_PER_DAY:
         log.info(f"Max trades/day reached ({config.MAX_TRADES_PER_DAY})")
+        bot_state.signal_checked_today = True
+        state.save(bot_state)
         return
+
+    daily_loss_pct = (abs(bot_state.daily_pnl) / bot_state.balance * 100
+                      if bot_state.daily_pnl < 0 else 0)
     if daily_loss_pct >= config.MAX_DAILY_LOSS_PCT:
         log.info(f"Daily loss limit hit ({daily_loss_pct:.1f}%)")
+        bot_state.signal_checked_today = True
+        state.save(bot_state)
         return
 
-    today_bars = get_session_bars(hourly, date.today())
-    signal = strategy.find_signal(today_bars, prev_high)
+    try:
+        daily = fetch_daily(days=7)
+        current_price = get_latest_price(config.TICKER)
+    except Exception as e:
+        log.error(f"Daily data fetch failed: {e}")
+        return
+
+    if current_price is None:
+        log.warning("Could not fetch current price")
+        return
+
+    signal = strategy.find_daily_signal(daily, current_price)
+    bot_state.signal_checked_today = True
+    state.save(bot_state)
 
     if signal:
-        log.info(f"SIGNAL FOUND | {signal.reason}")
+        log.info(f"DAILY SIGNAL | {signal.reason}")
         _open_trade(signal)
     else:
         log.info(
-            f"No signal | prev_high={prev_high:.1f} | "
-            f"session bars={len(today_bars)} | "
+            f"No signal | price={current_price:.1f} | "
             f"balance=${bot_state.balance:,.2f}"
         )
 
@@ -234,28 +280,35 @@ def check_signal():
 def main():
     global bot_state
 
-    log.info("=" * 55)
-    log.info(f"  NQ PREV-DAY-HIGH BOUNCE BOT")
-    log.info(f"  Ticker:  {config.TICKER}")
-    log.info(f"  Mode:    {'PAPER TRADING' if config.PAPER_TRADING else 'LIVE TRADING'}")
-    log.info("=" * 55)
+    log.info("=" * 60)
+    log.info(f"  NQ PREV-DAY-HIGH BOUNCE BOT  (Daily Bar Strategy)")
+    log.info(f"  Ticker:    {config.TICKER}")
+    log.info(f"  Mode:      {'PAPER TRADING' if config.PAPER_TRADING else 'LIVE TRADING'}")
+    log.info(f"  RR:        {config.RR_TARGET}")
+    log.info(f"  Touch:     {config.TOUCH_THRESHOLD*100:.1f}%")
+    log.info(f"  Max days:  {config.MAX_BARS_IN_TRADE}")
+    log.info(f"  Risk/trade:{config.RISK_PER_TRADE_PCT}%")
+    log.info("=" * 60)
 
     bot_state = state.load(config.ACCOUNT_SIZE)
     log.info(f"State loaded | balance=${bot_state.balance:,.2f} | in_trade={bot_state.in_trade}")
 
-    _notify(notifier.fmt_startup(config.TICKER, bot_state.balance, config.PAPER_TRADING))
+    _notify(notifier.fmt_startup(
+        config.TICKER, bot_state.balance, config.PAPER_TRADING,
+        config.RR_TARGET, config.RISK_PER_TRADE_PCT
+    ))
 
     scheduler = BlockingScheduler(timezone=config.TIMEZONE)
     scheduler.add_job(
         check_signal,
         trigger="cron",
-        minute=2,           # fire at HH:02 every hour (gives data time to update)
+        minute=2,           # fire at HH:02 every hour
         hour="*",
         day_of_week="mon-fri",
         id="signal_check",
     )
 
-    log.info("Scheduler started — checking every hour at HH:02")
+    log.info("Scheduler started — checking hourly at HH:02")
     check_signal()  # run immediately on startup
 
     try:
